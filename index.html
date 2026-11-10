@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AI 경혈 길잡이 (시험용 v1)</title>
+<style>
+:root{--navy:#1f3a5f;--bg:#f4f6fa;--warn:#b42318;--note:#92400e;--ok:#166534}
+*{box-sizing:border-box}
+body{margin:0;font-family:'Noto Sans KR','Apple SD Gothic Neo','Malgun Gothic',sans-serif;background:var(--bg);color:#222;line-height:1.5}
+header{background:var(--navy);color:#fff;padding:12px 16px}
+header h1{margin:0;font-size:18px}
+header p{margin:4px 0 0;font-size:12px;opacity:.9}
+.disc{background:#fff7e6;border-bottom:1px solid #f3d18a;padding:8px 16px;font-size:12.5px;color:#7a4a00}
+main{max-width:980px;margin:0 auto;padding:12px}
+.tabs{display:flex;gap:6px;margin-bottom:10px}
+.tabs button{flex:1;padding:9px;border:1px solid #c5cfdd;background:#fff;border-radius:8px;font-size:14px;cursor:pointer}
+.tabs button.on{background:var(--navy);color:#fff;border-color:var(--navy)}
+.grid{display:grid;grid-template-columns:1.4fr 1fr;gap:12px}
+@media(max-width:760px){.grid{grid-template-columns:1fr}}
+.card{background:#fff;border:1px solid #dbe2ec;border-radius:10px;padding:12px}
+.card h2{margin:0 0 8px;font-size:15px;color:var(--navy)}
+.stage{position:relative;background:#111;border-radius:8px;overflow:hidden;min-height:200px}
+.stage canvas{display:block;width:100%;height:auto}
+.stage video{position:absolute;left:0;top:0;width:2px;height:2px;opacity:0;pointer-events:none}
+.stage .ph{position:static;color:#bbb;padding:60px 12px;text-align:center;font-size:13px}
+button.pri{background:var(--navy);color:#fff;border:0;border-radius:8px;padding:9px 14px;font-size:14px;cursor:pointer}
+button.sec{background:#fff;color:var(--navy);border:1px solid var(--navy);border-radius:8px;padding:8px 12px;font-size:13px;cursor:pointer}
+.row{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:8px 0}
+label{font-size:13px}
+.pts button{margin:3px 4px 3px 0;padding:7px 10px;border:1px solid #9fb0c8;background:#fff;border-radius:16px;cursor:pointer;font-size:13px}
+.pts button.on{background:var(--navy);color:#fff}
+.msg{border-radius:8px;padding:8px 10px;margin:6px 0;font-size:13px}
+.msg.warn{background:#fee4e2;color:var(--warn);border:1px solid #fda29b}
+.msg.note{background:#fef0c7;color:var(--note);border:1px solid #fedf89}
+.msg.stop{background:#fee4e2;color:var(--warn);border:1px solid #fda29b;font-weight:600}
+.msg.info{background:#eaf2fb;color:#1b4b7a;border:1px solid #bcd6f0}
+.msg small{display:block;margin-top:4px;opacity:.85}
+.chk label{display:block;margin:4px 0}
+table{width:100%;border-collapse:collapse;font-size:12.5px}
+th,td{border:1px solid #cfd7e3;padding:4px 6px;text-align:left}
+th{background:#e8eef6}
+.small{font-size:12px;color:#555}
+.hidden{display:none}
+</style>
+</head>
+<body>
+<header>
+<h1>AI 경혈 길잡이 (시험용 v1)</h1>
+<p>우석대 약학과·한의학과 학습공동체 안약한조 · 교육용 지압 위치 안내</p>
+</header>
+<div class="disc">교육용 안내이며 진단이나 치료를 대신하지 않습니다. 복용 중인 약을 바꾸거나 끊지 마세요. 증상이 계속되면 진료를 받으세요. 손 사진은 서버로 보내지 않고 이 기기 안에서만 처리합니다.</div>
+<main>
+<div class="tabs">
+<button id="tabGuide" class="on">위치 안내</button>
+<button id="tabMeasure">오차 측정(팀용)</button>
+</div>
+
+<section id="guide">
+<div class="grid">
+<div class="card">
+<h2>1. 카메라로 손 비추기</h2>
+<div class="row">
+<button class="pri" id="btnStart">카메라 시작</button>
+<button class="sec" id="btnStop">정지</button>
+<select id="selCam"><option value="environment">후면 카메라</option><option value="user">전면 카메라</option></select>
+</div>
+<div class="stage"><video id="video" playsinline muted></video><canvas id="overlay"></canvas><div class="ph" id="ph">‘카메라 시작’을 누르고 손바닥 또는 손등이 보이게 손을 비춰 주세요. 내관은 손목 안쪽 팔까지 화면에 들어와야 합니다.</div></div>
+<div class="row small" id="status">대기 중</div>
+<div class="row">
+<label>손 방향 <select id="selSide"><option value="auto">자동</option><option value="palm">손바닥이 보임</option><option value="back">손등이 보임</option></select></label>
+<label><input type="checkbox" id="chkFlip"> 자동 판별이 반대로 나오면 체크</label>
+<button class="sec" id="btnCal" type="button">손바닥 보정: 손바닥을 보이고 누르기</button>
+<label><input type="checkbox" id="chkSkel" checked> 손 관절 표시(점검용)</label>
+<label><input type="checkbox" id="chkAll"> 5개 혈자리 모두 표시(점검용)</label>
+<label><input type="checkbox" id="chkFresh" checked> 매 프레임 새로 인식(정확, 약간 느림)</label>
+</div>
+<div class="row">
+<label>내 엄지 너비 보정(1촌 비율) <input type="range" id="rngCun" min="0.14" max="0.28" step="0.005" value="0.20"></label>
+<span id="cunVal" class="small">0.200</span>
+</div>
+<div class="small">1촌은 본인 엄지 너비를 기준으로 합니다(동신촌). 손바닥 길이(손목~가운뎃손가락 뿌리)에 대한 비율로 계산하며, 한의학과 팀원이 본인 손에 맞게 조정합니다.</div>
+</div>
+
+<div class="card">
+<h2>2. 혈자리 선택</h2>
+<div class="pts" id="pts"></div>
+<div class="chk">
+<div class="small">해당되는 것을 체크하세요.</div>
+<label><input type="checkbox" data-c="pregnant"> 임신 중이거나 임신 가능성이 있음</label>
+<label><input type="checkbox" data-c="anticoag"> 항응고제·항혈소판제 복용 중(와파린, 플라빅스, 아스피린 등)</label>
+<label><input type="checkbox" data-c="wound"> 해당 부위에 상처·발진·염증이 있음</label>
+<label><input type="checkbox" data-c="pain"> 누르면 통증이 심해지거나 어지러움</label>
+<label><input type="checkbox" data-c="breath"> 숨쉬기가 힘들거나 가슴이 아픔</label>
+</div>
+<div id="panel"></div>
+</div>
+</div>
+</section>
+
+<section id="measure" class="hidden">
+<div class="grid">
+<div class="card">
+<h2>오차 측정</h2>
+<div class="small">동의를 받은 참가자의 손 사진(얼굴 제외)을 불러와 앱이 계산한 위치와 한의학과 팀원이 찍은 기준 위치의 거리를 기록합니다. 거리는 1촌(내 엄지 너비) 기준으로 환산합니다.</div>
+<div class="row">
+<input type="file" id="file" accept="image/*">
+<button class="sec" id="btnSnap">카메라 화면 캡처</button>
+</div>
+<div class="row"><label><input type="checkbox" id="chkBlind" checked> 기준 위치를 찍기 전에는 앱 위치 숨기기(편향 방지)</label></div>
+<div class="row"><label>측정 혈자리 <select id="selMeasure"></select></label><label>참가자 번호 <input id="pid" size="6" placeholder="P01"></label></div>
+<div class="stage"><canvas id="mcanvas"></canvas><div class="ph" id="mph">사진을 불러온 뒤 먼저 한의학과 팀원이 기준 위치를 클릭하세요(빨간 점). 클릭하면 앱의 위치(파란 점)가 나타납니다.</div></div>
+<div class="row"><button class="pri" id="btnSave">이 측정 저장</button><button class="sec" id="btnCsv">CSV 내려받기</button><button class="sec" id="btnClear">기록 지우기</button></div>
+</div>
+<div class="card">
+<h2>측정 기록</h2>
+<div class="small" id="mstat">기록 없음</div>
+<table><thead><tr><th>참가자</th><th>혈자리</th><th>오차(촌)</th></tr></thead><tbody id="mbody"></tbody></table>
+<div class="small" id="msum"></div>
+</div>
+</div>
+</section>
+</main>
+
+<script type="module">
+// ---------- 데이터: 한의학과·약학과 팀원이 검토·수정할 부분 ----------
+const CUN_DEFAULT = 0.20; // 1촌 = 손목~가운뎃손가락 뿌리 거리 × 비율
+const POINTS = [
+ {id:'LU11', name:'소상(LU11)', side:'back',  desc:'손등 쪽에서 본 엄지, 손톱 바깥 모서리 바로 옆(손톱 뿌리 쪽 약 0.1촌)', evidence:'위치: WHO 표준 경혈 위치 참고. 효능 근거 표시 없음(한의학과 확인 필요).', grade:'위치 참고'},
+ {id:'LU10', name:'어제(LU10)', side:'palm', desc:'손바닥, 엄지 쪽 첫째 손허리뼈 중간, 붉은 살과 흰 살이 만나는 경계', evidence:'위치: WHO 표준 경혈 위치 참고. 효능 근거 표시 없음(한의학과 확인 필요).', grade:'위치 참고'},
+ {id:'LU9',  name:'태연(LU9)', side:'palm', desc:'손목 안쪽 주름의 엄지 쪽 끝, 맥박이 뛰는 곳 바깥쪽', evidence:'위치: WHO 표준 경혈 위치 참고. 효능 근거 표시 없음(한의학과 확인 필요).', grade:'위치 참고'},
+ {id:'LU8',  name:'경거(LU8)', side:'palm', desc:'손목 안쪽 주름에서 팔 쪽으로 1촌, 엄지 쪽', evidence:'위치: WHO 표준 경혈 위치 참고. 효능 근거 표시 없음(한의학과 확인 필요).', grade:'위치 참고'},
+ {id:'LI4',  name:'합곡(LI4)', side:'back', desc:'손등, 엄지와 검지 뼈 사이', evidence:'위치: WHO 표준 경혈 위치 참고. 효능 근거 표시 없음(한의학과 확인 필요).', grade:'위치 참고'}
+];
+// 안전 규칙 DB 초안: 검토 전까지 화면에 '검토 대기'로 표시됨
+const RULES = [
+ {id:'R1', point:'LI4', cond:'pregnant', action:'warn', text:'임신 중이거나 임신 가능성이 있으면 이 혈자리를 강하게 누르지 마세요. 필요하면 의료진과 먼저 상의하세요.', basis:'AACP Safety Guidelines 2017 (침 시술 기준이며, 가벼운 손 지압에서 같은 위험이 입증된 것은 아님)', grade:'주의(예방 원칙)', reviewer:'한의학과 팀원 검토 대기'},
+ {id:'R2', point:'*', cond:'anticoag', action:'note', text:'항응고제·항혈소판제를 복용 중이면 멍이 들거나 피가 나기 쉬울 수 있습니다. 세게 누르지 말고 피부 상태를 살펴보세요. 복용 중인 약은 바꾸지 말고, 걱정되면 약사나 의사와 상의하세요.', basis:'일반 안전 원칙(특정 혈자리 금기가 아니라 멍·피부 손상 예방 안내)', grade:'예방', reviewer:'약학과 팀원 검토 대기'},
+ {id:'R3', point:'*', cond:'wound', action:'hide', text:'상처·발진·염증이 있는 부위는 위치를 표시하지 않습니다. 해당 부위를 누르지 마세요.', basis:'일반 안전 원칙', grade:'예방', reviewer:'약학과 팀원 검토 대기'},
+ {id:'R4', point:'*', cond:'pain', action:'stop', text:'통증이 심해지거나 어지러우면 즉시 중단하고 증상이 계속되면 진료를 받으세요.', basis:'일반 안전 원칙', grade:'예방', reviewer:'약학과 팀원 검토 대기'},
+ {id:'R5', point:'*', cond:'breath', action:'refer', text:'숨쉬기가 힘들거나 가슴이 아프면 지압을 하지 말고 바로 진료를 받으세요. 심하면 119에 연락하세요.', basis:'일반 안전 원칙', grade:'예방', reviewer:'약학과 팀원 검토 대기'}
+];
+
+// ---------- 기하 계산 ----------
+const sub=(a,b)=>({x:a.x-b.x,y:a.y-b.y});
+const add=(a,b)=>({x:a.x+b.x,y:a.y+b.y});
+const mul=(a,k)=>({x:a.x*k,y:a.y*k});
+const len=a=>Math.hypot(a.x,a.y);
+const norm=a=>{const l=len(a)||1;return {x:a.x/l,y:a.y/l}};
+function metrics(L,cunRatio){
+  const cun=cunRatio*len(sub(L[0],L[9]));
+  return {cun, prox:norm(sub(L[0],L[9])), uln:norm(sub(L[17],L[5])), palmW:len(sub(L[5],L[17]))};
+}
+function computePoints(L,cunRatio){
+  const m=metrics(L,cunRatio);
+  const P={};
+  // 소상 LU11: 엄지 끝마디 바깥쪽(검지 반대편), 손톱 모서리 근처
+  const td=norm(sub(L[4],L[3]));
+  let pp={x:-td.y,y:td.x};
+  if((pp.x*(L[5].x-L[3].x)+pp.y*(L[5].y-L[3].y))>0) pp=mul(pp,-1);
+  P.LU11=add(add(L[4],mul(td,-0.45*len(sub(L[4],L[3])))),mul(pp,0.45*m.cun));
+  // 어제 LU10: 첫째 손허리뼈(1~2번 관절) 중간, 손바닥 중심에서 바깥쪽 경계
+  const mid=mul(add(L[1],L[2]),0.5);
+  const pc=mul(add(add(add(add(L[0],L[5]),L[9]),L[13]),L[17]),0.2);
+  P.LU10=add(mid,mul(norm(sub(mid,pc)),0.3*m.cun));
+  // 태연 LU9: 손목 주름의 엄지 쪽 끝
+  P.LU9=add(add(L[0],mul(m.uln,-0.28*m.palmW)),mul(m.prox,0.05*m.cun));
+  // 경거 LU8: 태연에서 팔 쪽으로 1촌
+  P.LU8=add(P.LU9,mul(m.prox,1*m.cun));
+  // 합곡 LI4: 손등, 둘째 손허리뼈 중간 부근
+  P.LI4=add(add(L[5],mul(sub(L[0],L[5]),0.45)),mul(sub(L[2],L[5]),0.25));
+  return {P,cun:m.cun};
+}
+function palmFacing(L,label,flip){
+  const a=sub(L[5],L[0]), b=sub(L[17],L[0]);
+  let s=Math.sign(a.x*b.y-a.y*b.x)*(label==='Right'?1:-1);
+  if(flip)s=-s;
+  return s>0?'palm':'back';
+}
+window.__geo={computePoints,palmFacing};
+
+// ---------- 안전 규칙 적용 ----------
+const cond={};
+document.querySelectorAll('[data-c]').forEach(el=>el.addEventListener('change',()=>{cond[el.dataset.c]=el.checked;render();}));
+let selected='LU9';
+function applicable(pid){return RULES.filter(r=>cond[r.cond]&&(r.point==='*'||r.point===pid));}
+function hidden(pid){return applicable(pid).some(r=>r.action==='hide');}
+function render(){
+  const pts=document.getElementById('pts');
+  pts.innerHTML=POINTS.map(p=>`<button class="${p.id===selected?'on':''}" data-p="${p.id}">${p.name}</button>`).join('');
+  pts.querySelectorAll('button').forEach(b=>b.onclick=()=>{selected=b.dataset.p;render();});
+  const p=POINTS.find(x=>x.id===selected);
+  const rs=applicable(selected);
+  let h=`<div class="msg info"><b>${p.name}</b><br>${p.desc}<small>근거 수준: ${p.grade}. ${p.evidence}</small></div>`;
+  if(hidden(selected)) h+=`<div class="msg stop">위치를 표시하지 않습니다.</div>`;
+  rs.forEach(r=>{
+    const cls=r.action==='warn'?'warn':(r.action==='stop'||r.action==='hide'||r.action==='refer')?'stop':'note';
+    h+=`<div class="msg ${cls}">${r.text}<small>근거: ${r.basis} / 등급: ${r.grade} / 검토: ${r.reviewer}</small></div>`;
+  });
+  if(!rs.length) h+=`<div class="msg info">체크한 주의 상태에 해당하는 규칙이 없습니다. 그래도 통증이나 이상이 있으면 중단하세요.<small>규칙은 검토 대기 중인 초안입니다.</small></div>`;
+  document.getElementById('panel').innerHTML=h;
+}
+render();
+
+// ---------- 카메라와 손 인식 ----------
+const $=id=>document.getElementById(id);
+const video=$('video'), cvs=$('overlay'), ctx=cvs.getContext('2d');
+const grab=document.createElement('canvas'), gctx=grab.getContext('2d');
+let lastD=null, landmarker=null, imgLandmarker=null, stream=null, raf=null, lastFrame=null, lastLabel='Right';
+const rng=$('rngCun');
+rng.value=CUN_DEFAULT; $('cunVal').textContent=Number(rng.value).toFixed(3);
+rng.oninput=()=>{$('cunVal').textContent=Number(rng.value).toFixed(3);};
+
+const LIBS=['https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14','https://unpkg.com/@mediapipe/tasks-vision@0.10.14'];
+const MODEL='https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task';
+async function loadModel(){
+  if(engine)return;
+  let mod=null, base=null, lastErr='';
+  for(const b of LIBS){
+    try{ $('status').textContent='[1/3] 라이브러리 불러오는 중… '+b.split('/')[2]; mod=await import(b+'/vision_bundle.mjs'); base=b; break; }
+    catch(e){ lastErr=b.split('/')[2]+' 실패('+e.message+')'; }
+  }
+  if(!mod) throw new Error('[1/3] 라이브러리를 불러오지 못했습니다. '+lastErr+' — 이 네트워크에서 cdn.jsdelivr.net, unpkg.com 접속이 막혀 있을 수 있습니다.');
+  let fs;
+  try{ $('status').textContent='[2/3] 손 인식 엔진(wasm) 불러오는 중…'; fs=await mod.FilesetResolver.forVisionTasks(base+'/wasm'); }
+  catch(e){ throw new Error('[2/3] wasm 엔진을 불러오지 못했습니다: '+e.message); }
+  try{
+    $('status').textContent='[3/3] 손 인식 모델 불러오는 중… (storage.googleapis.com)';
+    const r=await fetch(MODEL); if(!r.ok) throw new Error('HTTP '+r.status);
+    const buf=new Uint8Array(await r.arrayBuffer());
+    const opt=(mode)=>({baseOptions:{modelAssetBuffer:buf},runningMode:mode,numHands:1});
+    landmarker=await mod.HandLandmarker.createFromOptions(fs,opt('VIDEO'));
+    imgLandmarker=await mod.HandLandmarker.createFromOptions(fs,opt('IMAGE'));
+    engine='tasks';
+  }catch(e){
+    $('status').textContent='[3/3] 구글 저장소가 막혀 있어 대체 엔진으로 전환합니다…';
+    try{ await loadLegacy(); engine='legacy'; }
+    catch(e2){ throw new Error('[3/3] 손 인식 모델을 불러오지 못했습니다: '+e.message+' / 대체 엔진도 실패: '+e2.message); }
+  }
+}
+let engine=null, hands=null, legacyRes=null;
+const LEG='https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240';
+function loadScript(src){return new Promise((ok,no)=>{const s=document.createElement('script');s.src=src;s.onload=ok;s.onerror=()=>no(new Error('스크립트 로드 실패 '+src));document.head.appendChild(s);});}
+async function loadLegacy(){
+  if(!window.Hands) await loadScript(LEG+'/hands.js');
+  hands=new window.Hands({locateFile:f=>LEG+'/'+f});
+  hands.setOptions({maxNumHands:1,modelComplexity:1,minDetectionConfidence:0.5,minTrackingConfidence:0.5});
+  hands.onResults(r=>{legacyRes=r;});
+  await hands.initialize();
+}
+async function detect(src,isVideo,w,h){
+  if(engine==='tasks'){
+    const res=isVideo?landmarker.detectForVideo(src,performance.now()):imgLandmarker.detect(src);
+    return detectionToPx(res,w,h);
+  }
+  legacyRes=null;
+  if(!isVideo || document.getElementById('chkFresh').checked) hands.reset();
+  await hands.send({image:src});
+  const r=legacyRes; if(!r||!r.multiHandLandmarks||!r.multiHandLandmarks.length)return null;
+  return {L:r.multiHandLandmarks[0].map(p=>({x:p.x*w,y:p.y*h})), label:(r.multiHandedness&&r.multiHandedness[0]&&r.multiHandedness[0].label)||'Right'};
+}
+$('btnStart').onclick=async()=>{
+  try{
+    await loadModel();
+    stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:$('selCam').value,width:{ideal:960}},audio:false});
+    video.srcObject=stream; await video.play();
+    $('ph').classList.add('hidden');
+    cvs.width=video.videoWidth; cvs.height=video.videoHeight;
+    $('status').textContent='손을 비춰 주세요';
+    loop();
+  }catch(e){
+    let m=e.message;
+    if(e.name==='NotAllowedError'||/denied/i.test(m)) m='카메라 사용이 차단되었습니다. 주소창 왼쪽 자물쇠(또는 카메라 아이콘) → 카메라 → 허용으로 바꾼 뒤 새로고침하세요. 파일을 카카오톡·메신저 안에서 열었다면 크롬이나 사파리로 직접 열어야 합니다. 임시로는 위의 ‘오차 측정(팀용)’ 탭에서 사진을 불러와 위치를 볼 수 있습니다.';
+    else if(e.name==='NotFoundError') m='카메라를 찾지 못했습니다. 다른 카메라(전면/후면)를 선택해 보세요.';
+    else if(e.name==='NotReadableError') m='다른 앱이 카메라를 쓰고 있습니다. 화상회의 등을 닫고 다시 시도하세요.';
+    $('status').textContent='시작하지 못했습니다: '+m;}
+};
+$('btnStop').onclick=()=>{if(raf)cancelAnimationFrame(raf);raf=null;if(stream)stream.getTracks().forEach(t=>t.stop());stream=null;ctx.clearRect(0,0,cvs.width,cvs.height);$('status').textContent='정지됨';};
+
+function drawPoint(c,pt,color,label,r=7){
+  c.beginPath();c.arc(pt.x,pt.y,r,0,7);c.fillStyle=color;c.fill();c.lineWidth=2;c.strokeStyle='#fff';c.stroke();
+  if(label){c.font='bold 16px sans-serif';c.fillStyle='#fff';c.strokeStyle='#000';c.lineWidth=3;c.strokeText(label,pt.x+10,pt.y-8);c.fillText(label,pt.x+10,pt.y-8);}
+}
+const CONN=[[0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],[5,9],[9,10],[10,11],[11,12],[9,13],[13,14],[14,15],[15,16],[13,17],[17,18],[18,19],[19,20],[0,17]];
+function drawSkel(c,L){
+  c.lineWidth=2;c.strokeStyle='#22c55e';
+  CONN.forEach(([a,b])=>{c.beginPath();c.moveTo(L[a].x,L[a].y);c.lineTo(L[b].x,L[b].y);c.stroke();});
+  L.forEach((p,i)=>{c.beginPath();c.arc(p.x,p.y,3,0,7);c.fillStyle=(i===0||i===5||i===9||i===17||i===2)?'#facc15':'#22c55e';c.fill();});
+}
+function detectionToPx(res,w,h){
+  if(!res.landmarks||!res.landmarks.length)return null;
+  const L=res.landmarks[0].map(p=>({x:p.x*w,y:p.y*h}));
+  const label=(res.handednesses&&res.handednesses[0]&&res.handednesses[0][0].categoryName)||'Right';
+  return {L,label};
+}
+function currentSide(L,label){
+  const v=$('selSide').value;
+  return v==='auto'?palmFacing(L,label,$('chkFlip').checked):v;
+}
+async function loop(){
+  if(!stream)return;
+  const vw=video.videoWidth, vh=video.videoHeight;
+  if(vw&&(cvs.width!==vw||cvs.height!==vh)){cvs.width=vw;cvs.height=vh;}
+  if(grab.width!==cvs.width||grab.height!==cvs.height){grab.width=cvs.width;grab.height=cvs.height;}
+  gctx.drawImage(video,0,0,grab.width,grab.height);
+  const d=await detect(grab,true,cvs.width,cvs.height);
+  ctx.drawImage(grab,0,0,cvs.width,cvs.height);
+  if(!d){$('status').textContent='손이 보이지 않습니다';}
+  else{
+    lastLabel=d.label; lastD=d;
+    if($('chkSkel').checked)drawSkel(ctx,d.L);
+    if($('chkAll').checked){const AP=computePoints(d.L,Number(rng.value)).P;POINTS.forEach(q=>drawPoint(ctx,AP[q.id],'#f97316',q.id,5));}
+    const side=currentSide(d.L,d.label);
+    const {P}=computePoints(d.L,Number(rng.value));
+    const p=POINTS.find(x=>x.id===selected);
+    $('status').textContent='[엔진 '+engine+' · 영상 '+video.videoWidth+'×'+video.videoHeight+'] 감지된 면: '+(side==='palm'?'손바닥':'손등');
+    if(hidden(selected)){$('status').textContent+=' · 주의 상태 때문에 위치를 표시하지 않음';}
+    else if(p.side!=='any'&&p.side!==side){$('status').textContent+=` · ${p.name}는 ${p.side==='palm'?'손바닥':'손등'}이 보여야 표시됩니다`;}
+    else{
+      const pt=P[selected];
+      const inside=pt.x>=0&&pt.y>=0&&pt.x<=cvs.width&&pt.y<=cvs.height;
+      if(inside)drawPoint(ctx,pt,'#2563eb',p.name);
+      else $('status').textContent+=' · 혈자리가 화면 밖입니다. 손목과 팔이 더 보이게 비춰 주세요';
+    }
+  }
+  if(stream)raf=requestAnimationFrame(loop);
+}
+
+
+function applyFlip(v){ $('chkFlip').checked=v; try{localStorage.setItem('acuFlip',v?'1':'0');}catch(e){} }
+try{ if(localStorage.getItem('acuFlip')==='1') $('chkFlip').checked=true; }catch(e){}
+$('chkFlip').addEventListener('change',()=>applyFlip($('chkFlip').checked));
+$('btnCal').onclick=()=>{
+  if(!lastD){alert('먼저 카메라를 켜고 손바닥이 보이게 손을 비춘 상태에서 누르세요.');return;}
+  const raw=palmFacing(lastD.L,lastD.label,false);
+  applyFlip(raw!=='palm');
+  $('status').textContent='보정 완료: 지금 보이는 면을 손바닥으로 기억했습니다.';
+};
+
+// ---------- 탭 ----------
+function tab(which){
+  $('guide').classList.toggle('hidden',which!=='guide');
+  $('measure').classList.toggle('hidden',which!=='measure');
+  $('tabGuide').classList.toggle('on',which==='guide');
+  $('tabMeasure').classList.toggle('on',which==='measure');
+}
+$('tabGuide').onclick=()=>tab('guide'); $('tabMeasure').onclick=()=>tab('measure');
+
+// ---------- 오차 측정 ----------
+const mc=$('mcanvas'), mctx=mc.getContext('2d');
+let mImg=null, mDet=null, mRef=null, records=[];
+POINTS.forEach(p=>{const o=document.createElement('option');o.value=p.id;o.textContent=p.name;$('selMeasure').appendChild(o);});
+async function runOnImage(img){
+  await loadModel();
+  mc.width=img.naturalWidth||img.width; mc.height=img.naturalHeight||img.height;
+  mImg=img; mRef=null;
+  mDet=await detect(img,false,mc.width,mc.height);
+  $('mph').classList.add('hidden');
+  drawM();
+}
+function drawM(){
+  mctx.drawImage(mImg,0,0,mc.width,mc.height);
+  if(!mDet){mctx.font='bold 20px sans-serif';mctx.fillStyle='#f33';mctx.fillText('손을 찾지 못했습니다',20,40);return;}
+  if($('chkBlind').checked&&!mRef){return;}
+  drawSkel(mctx,mDet.L);
+  const {P}=computePoints(mDet.L,Number(rng.value));
+  drawPoint(mctx,P[$('selMeasure').value],'#2563eb','앱',8);
+  if(mRef)drawPoint(mctx,mRef,'#dc2626','기준',8);
+}
+$('file').onchange=e=>{const f=e.target.files[0];if(!f)return;const img=new Image();img.onload=()=>runOnImage(img).catch(err=>alert('오류: '+err.message));img.src=URL.createObjectURL(f);};
+$('btnSnap').onclick=()=>{if(!stream){alert('먼저 위치 안내 탭에서 카메라를 시작하세요.');return;}const c=document.createElement('canvas');c.width=video.videoWidth;c.height=video.videoHeight;c.getContext('2d').drawImage(video,0,0);const img=new Image();img.onload=()=>{tab('measure');runOnImage(img).catch(err=>alert('오류: '+err.message));};img.src=c.toDataURL('image/png');};
+$('selMeasure').onchange=()=>{if(mImg)drawM();};
+mc.onclick=e=>{if(!mImg)return;const r=mc.getBoundingClientRect();mRef={x:(e.clientX-r.left)*mc.width/r.width,y:(e.clientY-r.top)*mc.height/r.height};drawM();};
+$('chkBlind').onchange=()=>{if(mImg)drawM();};
+$('btnSave').onclick=()=>{
+  if(!mDet||!mRef){alert('손이 인식된 사진에서 기준 위치를 클릭해야 저장할 수 있습니다.');return;}
+  const {P,cun}=computePoints(mDet.L,Number(rng.value));
+  const id=$('selMeasure').value, a=P[id];
+  const errPx=Math.hypot(a.x-mRef.x,a.y-mRef.y);
+  records.push({pid:$('pid').value||'-',point:id,errPx,cun,errCun:errPx/cun,ratio:Number(rng.value)});
+  renderRec();
+};
+function renderRec(){
+  $('mbody').innerHTML=records.map(r=>`<tr><td>${r.pid}</td><td>${r.point}</td><td>${r.errCun.toFixed(2)}</td></tr>`).join('');
+  $('mstat').textContent=records.length?`${records.length}건`:'기록 없음';
+  const by={};records.forEach(r=>(by[r.point]=by[r.point]||[]).push(r.errCun));
+  $('msum').innerHTML=Object.entries(by).map(([k,v])=>`${k}: 평균 ${(v.reduce((a,b)=>a+b,0)/v.length).toFixed(2)}촌 (n=${v.length})`).join('<br>');
+}
+$('btnClear').onclick=()=>{if(confirm('측정 기록을 모두 지울까요?')){records=[];renderRec();}};
+$('btnCsv').onclick=()=>{
+  const rows=['participant,point,err_px,cun_px,err_cun,cun_ratio'].concat(records.map(r=>[r.pid,r.point,r.errPx.toFixed(1),r.cun.toFixed(1),r.errCun.toFixed(3),r.ratio].join(',')));
+  const a=document.createElement('a');a.href=URL.createObjectURL(new Blob(['﻿'+rows.join('\n')],{type:'text/csv'}));a.download='acupoint_error.csv';a.click();
+};
+</script>
+</body>
+</html>
